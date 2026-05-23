@@ -55,19 +55,31 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'finances_api.wsgi.application'
 
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.mysql',
-        'NAME': config('DB_DATABASE', default='railway'),
-        'USER': config('DB_USERNAME', default='root'),
-        'PASSWORD': config('DB_PASSWORD', default=''),
-        'HOST': config('DB_HOST', default='localhost'),
-        'PORT': config('DB_PORT', default='3306'),
-        'OPTIONS': {
-            'charset': 'utf8mb4',
-        },
+_DB_HOST = config('DB_HOST', default='')
+
+if _DB_HOST:
+    # Production / Railway MySQL
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.mysql',
+            'NAME': config('DB_DATABASE', default='railway'),
+            'USER': config('DB_USERNAME', default='root'),
+            'PASSWORD': config('DB_PASSWORD', default=''),
+            'HOST': _DB_HOST,
+            'PORT': config('DB_PORT', default='3306'),
+            'OPTIONS': {
+                'charset': 'utf8mb4',
+            },
+        }
     }
-}
+else:
+    # Local development – SQLite (no credentials needed)
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.sqlite3',
+            'NAME': BASE_DIR / 'db.sqlite3',
+        }
+    }
 
 AUTH_USER_MODEL = 'api.User'
 
