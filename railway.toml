@@ -2,7 +2,8 @@
 builder = "DOCKERFILE"
 
 [deploy]
-startCommand = "python manage.py migrate && gunicorn finances_api.wsgi:application --bind 0.0.0.0:$PORT --workers 2"
+releaseCommand = "python manage.py migrate --no-input"
+startCommand = "gunicorn finances_api.wsgi:application --bind 0.0.0.0:$PORT --workers 2"
 healthcheckPath = "/up"
 healthcheckTimeout = 30
 restartPolicyType = "on_failure"
