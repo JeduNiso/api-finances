@@ -63,7 +63,7 @@ if _DB_HOST:
     DATABASES = {
         'default': {
             'ENGINE': 'django.db.backends.mysql',
-            'NAME': config('DB_DATABASE', default=config('MYSQLDATABASE', default='railway')),
+            'NAME': config('DB_DATABASE', default=config('MYSQLDATABASE', default='finances')),
             'USER': config('DB_USERNAME', default=config('MYSQLUSER', default='root')),
             'PASSWORD': config('DB_PASSWORD', default=config('MYSQLPASSWORD', default='')),
             'HOST': _DB_HOST,
