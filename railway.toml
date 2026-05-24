@@ -2,7 +2,7 @@
 builder = "DOCKERFILE"
 
 [deploy]
-releaseCommand = "python manage.py migrate --no-input"
+releaseCommand = "python manage.py migrate --fake-initial --no-input"
 healthcheckPath = "/up"
 healthcheckTimeout = 30
 restartPolicyType = "on_failure"
