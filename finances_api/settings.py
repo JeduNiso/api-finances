@@ -55,18 +55,19 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'finances_api.wsgi.application'
 
-_DB_HOST = config('DB_HOST', default='')
+# Support both custom DB_HOST and Railway's automatic MYSQLHOST variable
+_DB_HOST = config('DB_HOST', default=config('MYSQLHOST', default=''))
 
 if _DB_HOST:
     # Production / Railway MySQL
     DATABASES = {
         'default': {
             'ENGINE': 'django.db.backends.mysql',
-            'NAME': config('DB_DATABASE', default='railway'),
-            'USER': config('DB_USERNAME', default='root'),
-            'PASSWORD': config('DB_PASSWORD', default=''),
+            'NAME': config('DB_DATABASE', default=config('MYSQLDATABASE', default='railway')),
+            'USER': config('DB_USERNAME', default=config('MYSQLUSER', default='root')),
+            'PASSWORD': config('DB_PASSWORD', default=config('MYSQLPASSWORD', default='')),
             'HOST': _DB_HOST,
-            'PORT': config('DB_PORT', default='3306'),
+            'PORT': config('DB_PORT', default=config('MYSQLPORT', default='3306')),
             'OPTIONS': {
                 'charset': 'utf8mb4',
             },
