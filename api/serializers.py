@@ -80,11 +80,16 @@ class AccountSerializer(serializers.ModelSerializer):
         queryset=Bank.objects.all(),
         source='bank',
     )
+    owner = serializers.SerializerMethodField()
 
     class Meta:
         model = Account
-        fields = ('id', 'account_number', 'currency', 'balance', 'bank_id', 'bank', 'family_id', 'created_at')
-        read_only_fields = ('id', 'family_id', 'created_at')
+        fields = ('id', 'account_number', 'currency', 'balance', 'bank_id', 'bank', 'family_id', 'owner', 'created_at')
+        read_only_fields = ('id', 'family_id', 'owner', 'created_at')
+
+    def get_owner(self, obj):
+        user = obj.users.first()
+        return UserSerializer(user).data if user else None
 
 
 class CategorySerializer(serializers.ModelSerializer):

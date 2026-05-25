@@ -174,9 +174,9 @@ class AccountListCreateView(APIView):
     def get(self, request):
         family, _ = _family_context(request.user)
         if family:
-            accounts = Account.objects.filter(family=family).select_related('bank')
+            accounts = Account.objects.filter(family=family).select_related('bank').prefetch_related('users')
         else:
-            accounts = Account.objects.filter(users=request.user).select_related('bank')
+            accounts = Account.objects.filter(users=request.user).select_related('bank').prefetch_related('users')
         return Response(AccountSerializer(accounts, many=True).data)
 
     def post(self, request):
@@ -188,15 +188,25 @@ class AccountListCreateView(APIView):
                 {'message': 'You must belong to a family to create an account.'},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+        owner_id = request.data.get('owner_id')
+        if owner_id:
+            if not family.members.filter(id=owner_id).exists():
+                return Response({'message': 'Owner must be a family member.'}, status=status.HTTP_400_BAD_REQUEST)
+            try:
+                owner = User.objects.get(id=owner_id)
+            except User.DoesNotExist:
+                return Response({'message': 'User not found.'}, status=status.HTTP_400_BAD_REQUEST)
+        else:
+            owner = request.user
         account = serializer.save(family=family)
-        UserAccount.objects.create(user=request.user, account=account)
+        UserAccount.objects.create(user=owner, account=account)
         return Response(AccountSerializer(account).data, status=status.HTTP_201_CREATED)
 
 
 class AccountDetailView(APIView):
     def _get_account(self, request, pk):
         family, _ = _family_context(request.user)
-        qs = Account.objects.select_related('bank')
+        qs = Account.objects.select_related('bank').prefetch_related('users')
         try:
             if family:
                 return qs.filter(family=family).get(pk=pk)
