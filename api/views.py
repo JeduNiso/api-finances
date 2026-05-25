@@ -708,3 +708,174 @@ class IncomeDetailView(APIView):
             return Response({'message': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
         obj.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+# ─── Report ───────────────────────────────────────────────────────────────────
+
+class ReportView(APIView):
+    """
+    GET /api/report
+    Query params:
+      date_from   YYYY-MM-DD
+      date_to     YYYY-MM-DD
+      types       comma-separated: income,spending,expense,debt
+      categories  comma-separated category IDs (only affects spending/expense)
+    """
+    def get(self, request):
+        family, member_ids = _family_context(request.user)
+        accounts_qs = (
+            Account.objects.filter(family=family)
+            if family else
+            Account.objects.filter(users=request.user)
+        )
+
+        p = request.query_params
+        date_from   = p.get('date_from')
+        date_to     = p.get('date_to')
+        raw_types   = p.get('types', '').strip()
+        raw_cats    = p.get('categories', '').strip()
+
+        active_types = set(raw_types.split(',')) if raw_types else None  # None = all
+        cat_ids      = [c for c in raw_cats.split(',') if c] if raw_cats else None
+
+        def _want(t):
+            return active_types is None or t in active_types
+
+        rows = []
+
+        # ── Incomes ───────────────────────────────────────────────────────────
+        if _want('income'):
+            qs = (
+                Income.objects.filter(user__in=member_ids)
+                .select_related('account', 'account__bank', 'user')
+            )
+            if date_from:
+                qs = qs.filter(received_at__gte=date_from)
+            if date_to:
+                qs = qs.filter(received_at__lte=date_to)
+            for item in qs:
+                rows.append({
+                    'id':          f'income-{item.id}',
+                    'type':        'income',
+                    'amount':      item.amount,
+                    'description': item.description,
+                    'date':        item.received_at.isoformat(),
+                    'currency':    item.account.currency if item.account else 'BOB',
+                    'account':     item.account.account_number if item.account else None,
+                    'category':    None,
+                    'user':        item.user.name if item.user else None,
+                })
+
+        # ── Spending ──────────────────────────────────────────────────────────
+        if _want('spending'):
+            qs = (
+                Spending.objects.filter(user__in=member_ids)
+                .select_related('account', 'account__bank', 'category', 'user')
+            )
+            if date_from:
+                qs = qs.filter(spent_at__gte=date_from)
+            if date_to:
+                qs = qs.filter(spent_at__lte=date_to)
+            if cat_ids:
+                qs = qs.filter(category_id__in=cat_ids)
+            for item in qs:
+                rows.append({
+                    'id':          f'spending-{item.id}',
+                    'type':        'spending',
+                    'amount':      item.amount,
+                    'description': item.description,
+                    'date':        item.spent_at.isoformat(),
+                    'currency':    item.account.currency if item.account else 'BOB',
+                    'account':     item.account.account_number if item.account else None,
+                    'category':    item.category.name if item.category else None,
+                    'user':        item.user.name if item.user else None,
+                })
+
+        # ── Expense payments (ExpenseLog) ─────────────────────────────────────
+        if _want('expense'):
+            qs = (
+                ExpenseLog.objects.filter(expense__account__in=accounts_qs)
+                .select_related('expense', 'expense__category', 'account', 'account__bank')
+            )
+            if date_from:
+                qs = qs.filter(paid_at__gte=date_from)
+            if date_to:
+                qs = qs.filter(paid_at__lte=date_to)
+            if cat_ids:
+                qs = qs.filter(expense__category_id__in=cat_ids)
+            for item in qs:
+                rows.append({
+                    'id':          f'expense-{item.id}',
+                    'type':        'expense',
+                    'amount':      item.amount_paid,
+                    'description': item.expense.name,
+                    'date':        item.paid_at.isoformat(),
+                    'currency':    item.account.currency if item.account else 'BOB',
+                    'account':     item.account.account_number if item.account else None,
+                    'category':    item.expense.category.name if item.expense.category else None,
+                    'user':        None,
+                })
+
+        # ── Debt payments ─────────────────────────────────────────────────────
+        if _want('debt'):
+            qs = (
+                DebtPayment.objects.filter(debt__user__in=member_ids)
+                .select_related('debt', 'account', 'account__bank')
+            )
+            if date_from:
+                qs = qs.filter(paid_at__gte=date_from)
+            if date_to:
+                qs = qs.filter(paid_at__lte=date_to)
+            for item in qs:
+                rows.append({
+                    'id':          f'debt-{item.id}',
+                    'type':        'debt',
+                    'amount':      item.amount,
+                    'description': f'Debt: {item.debt.creditor}',
+                    'date':        item.paid_at.isoformat(),
+                    'currency':    item.account.currency if item.account else 'BOB',
+                    'account':     item.account.account_number if item.account else None,
+                    'category':    None,
+                    'user':        None,
+                })
+
+        rows.sort(key=lambda x: x['date'], reverse=True)
+
+        # ── Summary per currency ──────────────────────────────────────────────
+        def _agg(direction):
+            totals = {}
+            for r in rows:
+                is_income = r['type'] == 'income'
+                if direction == 'in' and not is_income:
+                    continue
+                if direction == 'out' and is_income:
+                    continue
+                cur = r['currency']
+                totals[cur] = totals.get(cur, Decimal('0')) + Decimal(str(r['amount']))
+            return {k: str(v) for k, v in totals.items()}
+
+        income_by_cur  = _agg('in')
+        outflow_by_cur = _agg('out')
+
+        def _to_bob(by_cur):
+            total = Decimal('0')
+            for cur, val in by_cur.items():
+                amount = Decimal(val)
+                total += amount * USD_TO_BOB if cur == 'USD' else amount
+            return str(total)
+
+        total_income_bob  = _to_bob(income_by_cur)
+        total_outflow_bob = _to_bob(outflow_by_cur)
+        net_bob = str(Decimal(total_income_bob) - Decimal(total_outflow_bob))
+
+        return Response({
+            'transactions': rows,
+            'summary': {
+                'income_by_currency':  income_by_cur,
+                'outflow_by_currency': outflow_by_cur,
+                'total_income_bob':    total_income_bob,
+                'total_outflow_bob':   total_outflow_bob,
+                'net_bob':             net_bob,
+                'count':               len(rows),
+            },
+        })

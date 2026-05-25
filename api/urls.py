@@ -54,4 +54,7 @@ urlpatterns = [
     # ── Incomes ───────────────────────────────────────────────────────────────
     path('incomes/<int:pk>', views.IncomeDetailView.as_view(),     name='incomes-detail'),
     path('incomes',          views.IncomeListCreateView.as_view(), name='incomes-list'),
+
+    # ── Report ────────────────────────────────────────────────────────────────
+    path('report', views.ReportView.as_view(), name='report'),
 ]
