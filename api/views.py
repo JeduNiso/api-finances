@@ -1,3 +1,5 @@
+import calendar
+from datetime import timedelta
 from decimal import Decimal
 
 from django.contrib.auth import authenticate
@@ -94,24 +96,43 @@ class DashboardView(APIView):
         family, member_ids = _family_context(user)
         accounts = Account.objects.filter(family=family) if family else Account.objects.filter(users=user)
 
-        total_balance = accounts.aggregate(t=Sum('balance'))['t'] or Decimal('0')
-        monthly_spending = (
+        # Balance per currency
+        balance_by_currency = {}
+        for acc in accounts.values('currency', 'balance'):
+            curr = acc['currency']
+            balance_by_currency[curr] = balance_by_currency.get(curr, Decimal('0')) + (acc['balance'] or Decimal('0'))
+        total_balance = sum(balance_by_currency.values(), Decimal('0'))
+
+        # Monthly spending per currency (via account currency)
+        spending_rows = (
             Spending.objects.filter(
                 user__in=member_ids,
                 spent_at__year=today.year,
                 spent_at__month=today.month,
-            ).aggregate(t=Sum('amount'))['t'] or Decimal('0')
+            ).values('account__currency').annotate(total=Sum('amount'))
         )
+        spending_by_currency = {row['account__currency']: row['total'] for row in spending_rows}
+        monthly_spending = sum(spending_by_currency.values(), Decimal('0'))
+
         active_debts_count = Debt.objects.filter(user__in=member_ids, status='active').count()
 
-        upcoming_days = list(range(today.day, min(today.day + 7, 32)))
+        # Upcoming expenses: next 7 days, wrapping around month end
+        next_week = today + timedelta(days=7)
+        if next_week.month == today.month:
+            upcoming_days = list(range(today.day, today.day + 8))
+        else:
+            days_in_month = calendar.monthrange(today.year, today.month)[1]
+            upcoming_days = list(range(today.day, days_in_month + 1)) + list(range(1, next_week.day + 1))
+
         upcoming_qs = (
             Expense.objects.filter(account__in=accounts, active=True, day_of_month__in=upcoming_days)
             .select_related('category', 'account')
         )
         return Response({
             'total_balance': total_balance,
+            'balance_by_currency': balance_by_currency,
             'monthly_spending': monthly_spending,
+            'spending_by_currency': spending_by_currency,
             'active_debts_count': active_debts_count,
             'upcoming_expenses_count': upcoming_qs.count(),
             'upcoming_expenses': ExpenseSerializer(upcoming_qs, many=True).data,
