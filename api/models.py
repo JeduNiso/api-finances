@@ -100,7 +100,9 @@ class Bank(models.Model):
 
 
 class Account(models.Model):
+    CURRENCY_CHOICES = [('BOB', 'Boliviano'), ('USD', 'US Dollar')]
     account_number = models.CharField(max_length=50, unique=True)
+    currency = models.CharField(max_length=3, choices=CURRENCY_CHOICES, default='BOB')
     balance = models.DecimalField(max_digits=15, decimal_places=2, default=0)
     bank = models.ForeignKey(Bank, on_delete=models.RESTRICT, related_name='accounts')
     family = models.ForeignKey(Family, on_delete=models.RESTRICT, related_name='accounts')
