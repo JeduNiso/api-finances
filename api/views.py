@@ -401,17 +401,34 @@ class ExpensePayView(APIView):
         family, _ = _family_context(request.user)
         accounts = Account.objects.filter(family=family) if family else Account.objects.filter(users=request.user)
         try:
-            expense = Expense.objects.filter(account__in=accounts).get(pk=pk)
+            expense = Expense.objects.filter(account__in=accounts).select_related('debt').get(pk=pk)
         except Expense.DoesNotExist:
             return Response({'message': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
         today = timezone.now().date()
+        amount_paid = Decimal(str(request.data.get('amount_paid', expense.amount)))
+        paid_at = request.data.get('paid_at', today.isoformat())
+        notes = request.data.get('notes', '')
         log = ExpenseLog.objects.create(
             expense=expense,
             account=expense.account,
-            amount_paid=request.data.get('amount_paid', expense.amount),
-            paid_at=request.data.get('paid_at', today.isoformat()),
-            notes=request.data.get('notes', ''),
+            amount_paid=amount_paid,
+            paid_at=paid_at,
+            notes=notes,
         )
+        # If linked to a debt, record payment and reduce balance
+        if expense.debt_id and expense.debt:
+            DebtPayment.objects.create(
+                debt=expense.debt,
+                account=expense.account,
+                amount=amount_paid,
+                paid_at=paid_at,
+                notes=notes or f'Auto from expense: {expense.name}',
+            )
+            debt = expense.debt
+            debt.current_balance = max(Decimal('0'), debt.current_balance - amount_paid)
+            if debt.current_balance == Decimal('0'):
+                debt.status = 'paid'
+            debt.save()
         return Response(ExpenseLogSerializer(log).data, status=status.HTTP_201_CREATED)
 
 

@@ -172,6 +172,7 @@ class Expense(models.Model):
     frequency = models.CharField(max_length=20, choices=FREQUENCY_CHOICES, default='monthly')
     category = models.ForeignKey(Category, on_delete=models.RESTRICT, related_name='expenses')
     account = models.ForeignKey(Account, on_delete=models.RESTRICT, related_name='expenses')
+    debt = models.ForeignKey('Debt', null=True, blank=True, on_delete=models.SET_NULL, related_name='linked_expenses')
     active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

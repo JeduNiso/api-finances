@@ -132,15 +132,28 @@ class ExpenseSerializer(serializers.ModelSerializer):
         queryset=Account.objects.all(),
         source='account',
     )
+    debt_id = serializers.PrimaryKeyRelatedField(
+        queryset=Debt.objects.all(),
+        source='debt',
+        allow_null=True,
+        required=False,
+    )
+    debt_summary = serializers.SerializerMethodField()
     logs = ExpenseLogSerializer(many=True, read_only=True)
 
     class Meta:
         model = Expense
         fields = (
             'id', 'name', 'amount', 'day_of_month', 'frequency',
-            'category_id', 'category', 'account_id', 'account', 'active', 'logs', 'created_at',
+            'category_id', 'category', 'account_id', 'account',
+            'debt_id', 'debt_summary', 'active', 'logs', 'created_at',
         )
-        read_only_fields = ('id', 'category', 'account', 'logs', 'created_at')
+        read_only_fields = ('id', 'category', 'account', 'debt_summary', 'logs', 'created_at')
+
+    def get_debt_summary(self, obj):
+        if obj.debt_id:
+            return {'id': obj.debt_id, 'creditor': obj.debt.creditor, 'current_balance': obj.debt.current_balance}
+        return None
 
 
 class DebtPaymentSerializer(serializers.ModelSerializer):
