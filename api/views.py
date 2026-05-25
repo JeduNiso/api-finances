@@ -460,9 +460,19 @@ class DebtDetailView(APIView):
 class DebtSummaryView(APIView):
     def get(self, request):
         _, member_ids = _family_context(request.user)
-        qs = Debt.objects.filter(user__in=member_ids, status='active')
-        total = qs.aggregate(t=Sum('current_balance'))['t'] or Decimal('0')
-        return Response({'total_balance': total, 'active_count': qs.count()})
+        all_qs = Debt.objects.filter(user__in=member_ids)
+        active_qs = all_qs.filter(status='active')
+        agg = all_qs.aggregate(
+            total_original=Sum('original_amount'),
+            total_current=Sum('current_balance'),
+        )
+        total_original = agg['total_original'] or Decimal('0')
+        total_current = agg['total_current'] or Decimal('0')
+        return Response({
+            'total_owed': total_current,
+            'total_paid': total_original - total_current,
+            'active_count': active_qs.count(),
+        })
 
 
 class DebtPaymentCreateView(APIView):
