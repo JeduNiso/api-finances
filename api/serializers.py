@@ -80,7 +80,7 @@ class AccountSerializer(serializers.ModelSerializer):
     class Meta:
         model = Account
         fields = ('id', 'account_number', 'balance', 'bank_id', 'bank', 'family_id', 'created_at')
-        read_only_fields = ('id', 'balance', 'family_id', 'bank', 'created_at')
+        read_only_fields = ('id', 'family_id', 'bank', 'created_at')
 
 
 class CategorySerializer(serializers.ModelSerializer):
