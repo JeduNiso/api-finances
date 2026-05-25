@@ -101,14 +101,16 @@ class SpendingSerializer(serializers.ModelSerializer):
         queryset=Account.objects.all(),
         source='account',
     )
+    user = UserSerializer(read_only=True)
 
     class Meta:
         model = Spending
         fields = (
             'id', 'amount', 'description', 'spent_at',
-            'account_id', 'account', 'category_id', 'category', 'user_id', 'created_at',
+            'account_id', 'account', 'category_id', 'category',
+            'user_id', 'user', 'created_at',
         )
-        read_only_fields = ('id', 'user_id', 'account', 'category', 'created_at')
+        read_only_fields = ('id', 'user_id', 'user', 'account', 'category', 'created_at')
 
 
 class ExpenseLogSerializer(serializers.ModelSerializer):
@@ -153,12 +155,13 @@ class DebtSerializer(serializers.ModelSerializer):
         required=False,
     )
     payments = DebtPaymentSerializer(many=True, read_only=True)
+    user = UserSerializer(read_only=True)
 
     class Meta:
         model = Debt
         fields = (
             'id', 'creditor', 'description', 'original_amount', 'current_balance',
             'monthly_payment', 'interest_rate', 'start_date', 'due_date', 'status',
-            'account_id', 'account', 'user_id', 'progress_percentage', 'payments', 'created_at',
+            'account_id', 'account', 'user_id', 'user', 'progress_percentage', 'payments', 'created_at',
         )
-        read_only_fields = ('id', 'user_id', 'account', 'progress_percentage', 'payments', 'created_at')
+        read_only_fields = ('id', 'user_id', 'user', 'account', 'progress_percentage', 'payments', 'created_at')

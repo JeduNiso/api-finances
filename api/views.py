@@ -21,6 +21,16 @@ from .serializers import (
 )
 
 
+# ─── Helpers ──────────────────────────────────────────────────────────────────
+
+def _family_context(user):
+    """Return (family, member_ids) for the user's family, or (None, [user.id])."""
+    family = Family.objects.filter(members=user).first()
+    if family:
+        return family, list(family.members.values_list('id', flat=True))
+    return None, [user.id]
+
+
 # ─── Auth ─────────────────────────────────────────────────────────────────────
 
 class RegisterView(APIView):
@@ -80,18 +90,19 @@ class DashboardView(APIView):
     def get(self, request):
         user = request.user
         today = timezone.now().date()
-        accounts = Account.objects.filter(users=user)
+        family, member_ids = _family_context(user)
+        accounts = Account.objects.filter(family=family) if family else Account.objects.filter(users=user)
 
         total_balance = accounts.aggregate(t=Sum('balance'))['t'] or Decimal('0')
         spending_this_month = (
             Spending.objects.filter(
-                user=user,
+                user__in=member_ids,
                 spent_at__year=today.year,
                 spent_at__month=today.month,
             ).aggregate(t=Sum('amount'))['t'] or Decimal('0')
         )
         active_debts_balance = (
-            Debt.objects.filter(user=user, status='active')
+            Debt.objects.filter(user__in=member_ids, status='active')
             .aggregate(t=Sum('current_balance'))['t'] or Decimal('0')
         )
         return Response({
@@ -161,7 +172,11 @@ class FamilyRemoveMemberView(APIView):
 
 class AccountListCreateView(APIView):
     def get(self, request):
-        accounts = Account.objects.filter(users=request.user).select_related('bank')
+        family, _ = _family_context(request.user)
+        if family:
+            accounts = Account.objects.filter(family=family).select_related('bank')
+        else:
+            accounts = Account.objects.filter(users=request.user).select_related('bank')
         return Response(AccountSerializer(accounts, many=True).data)
 
     def post(self, request):
@@ -180,8 +195,12 @@ class AccountListCreateView(APIView):
 
 class AccountDetailView(APIView):
     def _get_account(self, request, pk):
+        family, _ = _family_context(request.user)
+        qs = Account.objects.select_related('bank')
         try:
-            return Account.objects.filter(users=request.user).select_related('bank').get(pk=pk)
+            if family:
+                return qs.filter(family=family).get(pk=pk)
+            return qs.filter(users=request.user).get(pk=pk)
         except Account.DoesNotExist:
             return None
 
@@ -204,8 +223,10 @@ class AccountDetailView(APIView):
 
 class AccountSummaryView(APIView):
     def get(self, request, pk):
+        family, _ = _family_context(request.user)
+        qs = Account.objects.select_related('bank')
         try:
-            account = Account.objects.filter(users=request.user).select_related('bank').get(pk=pk)
+            account = qs.filter(family=family).get(pk=pk) if family else qs.filter(users=request.user).get(pk=pk)
         except Account.DoesNotExist:
             return Response({'message': 'Account not found.'}, status=status.HTTP_404_NOT_FOUND)
         today = timezone.now().date()
@@ -231,9 +252,10 @@ class AccountSummaryView(APIView):
 
 class SpendingListCreateView(APIView):
     def get(self, request):
+        _, member_ids = _family_context(request.user)
         qs = (
-            Spending.objects.filter(user=request.user)
-            .select_related('category')
+            Spending.objects.filter(user__in=member_ids)
+            .select_related('category', 'account', 'account__bank', 'user')
             .order_by('-spent_at')
         )
         return Response(SpendingSerializer(qs, many=True).data)
@@ -272,8 +294,9 @@ class SpendingDetailView(APIView):
 class SpendingSummaryView(APIView):
     def get(self, request):
         today = timezone.now().date()
+        _, member_ids = _family_context(request.user)
         qs = Spending.objects.filter(
-            user=request.user,
+            user__in=member_ids,
             spent_at__year=today.year,
             spent_at__month=today.month,
         )
@@ -290,6 +313,9 @@ class SpendingSummaryView(APIView):
 
 class ExpenseListCreateView(APIView):
     def _user_accounts(self, request):
+        family, _ = _family_context(request.user)
+        if family:
+            return Account.objects.filter(family=family)
         return Account.objects.filter(users=request.user)
 
     def get(self, request):
@@ -309,7 +335,8 @@ class ExpenseListCreateView(APIView):
 
 class ExpenseDetailView(APIView):
     def _get(self, request, pk):
-        accounts = Account.objects.filter(users=request.user)
+        family, _ = _family_context(request.user)
+        accounts = Account.objects.filter(family=family) if family else Account.objects.filter(users=request.user)
         try:
             return Expense.objects.filter(account__in=accounts).get(pk=pk)
         except Expense.DoesNotExist:
@@ -334,7 +361,8 @@ class ExpenseDetailView(APIView):
 
 class ExpenseCalendarView(APIView):
     def get(self, request):
-        accounts = Account.objects.filter(users=request.user)
+        family, _ = _family_context(request.user)
+        accounts = Account.objects.filter(family=family) if family else Account.objects.filter(users=request.user)
         today = timezone.now().date()
         expenses = (
             Expense.objects.filter(account__in=accounts, active=True)
@@ -355,7 +383,8 @@ class ExpenseCalendarView(APIView):
 
 class ExpensePayView(APIView):
     def post(self, request, pk):
-        accounts = Account.objects.filter(users=request.user)
+        family, _ = _family_context(request.user)
+        accounts = Account.objects.filter(family=family) if family else Account.objects.filter(users=request.user)
         try:
             expense = Expense.objects.filter(account__in=accounts).get(pk=pk)
         except Expense.DoesNotExist:
@@ -375,7 +404,12 @@ class ExpensePayView(APIView):
 
 class DebtListCreateView(APIView):
     def get(self, request):
-        qs = Debt.objects.filter(user=request.user).prefetch_related('payments')
+        _, member_ids = _family_context(request.user)
+        qs = (
+            Debt.objects.filter(user__in=member_ids)
+            .select_related('user', 'account', 'account__bank')
+            .prefetch_related('payments')
+        )
         return Response(DebtSerializer(qs, many=True).data)
 
     def post(self, request):
@@ -415,7 +449,8 @@ class DebtDetailView(APIView):
 
 class DebtSummaryView(APIView):
     def get(self, request):
-        qs = Debt.objects.filter(user=request.user, status='active')
+        _, member_ids = _family_context(request.user)
+        qs = Debt.objects.filter(user__in=member_ids, status='active')
         total = qs.aggregate(t=Sum('current_balance'))['t'] or Decimal('0')
         return Response({'total_balance': total, 'active_count': qs.count()})
 
