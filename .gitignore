@@ -12,3 +12,5 @@ staticfiles/
 .mypy_cache/
 .pytest_cache/
 .DS_Store
+create_database.sql
+*.postman_collection.json
