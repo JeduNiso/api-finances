@@ -101,6 +101,10 @@ class CategorySerializer(serializers.ModelSerializer):
 
 class SpendingSerializer(serializers.ModelSerializer):
     category = CategorySerializer(read_only=True)
+    category_id = serializers.PrimaryKeyRelatedField(
+        queryset=Category.objects.all(),
+        source='category',
+    )
     account = AccountSerializer(read_only=True)
     account_id = serializers.PrimaryKeyRelatedField(
         queryset=Account.objects.all(),
