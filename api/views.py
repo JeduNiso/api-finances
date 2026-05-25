@@ -94,21 +94,26 @@ class DashboardView(APIView):
         accounts = Account.objects.filter(family=family) if family else Account.objects.filter(users=user)
 
         total_balance = accounts.aggregate(t=Sum('balance'))['t'] or Decimal('0')
-        spending_this_month = (
+        monthly_spending = (
             Spending.objects.filter(
                 user__in=member_ids,
                 spent_at__year=today.year,
                 spent_at__month=today.month,
             ).aggregate(t=Sum('amount'))['t'] or Decimal('0')
         )
-        active_debts_balance = (
-            Debt.objects.filter(user__in=member_ids, status='active')
-            .aggregate(t=Sum('current_balance'))['t'] or Decimal('0')
+        active_debts_count = Debt.objects.filter(user__in=member_ids, status='active').count()
+
+        upcoming_days = list(range(today.day, min(today.day + 7, 32)))
+        upcoming_qs = (
+            Expense.objects.filter(account__in=accounts, active=True, day_of_month__in=upcoming_days)
+            .select_related('category', 'account')
         )
         return Response({
             'total_balance': total_balance,
-            'spending_this_month': spending_this_month,
-            'active_debts_balance': active_debts_balance,
+            'monthly_spending': monthly_spending,
+            'active_debts_count': active_debts_count,
+            'upcoming_expenses_count': upcoming_qs.count(),
+            'upcoming_expenses': ExpenseSerializer(upcoming_qs, many=True).data,
         })
 
 
