@@ -76,11 +76,15 @@ class BankSerializer(serializers.ModelSerializer):
 
 class AccountSerializer(serializers.ModelSerializer):
     bank = BankSerializer(read_only=True)
+    bank_id = serializers.PrimaryKeyRelatedField(
+        queryset=Bank.objects.all(),
+        source='bank',
+    )
 
     class Meta:
         model = Account
         fields = ('id', 'account_number', 'balance', 'bank_id', 'bank', 'family_id', 'created_at')
-        read_only_fields = ('id', 'family_id', 'bank', 'created_at')
+        read_only_fields = ('id', 'family_id', 'created_at')
 
 
 class CategorySerializer(serializers.ModelSerializer):
