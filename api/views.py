@@ -319,15 +319,27 @@ class SpendingDetailView(APIView):
         obj = self._get(request, pk)
         if not obj:
             return Response({'message': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
+        old_account_id = obj.account_id
+        old_amount = obj.amount
         serializer = SpendingSerializer(obj, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
-        serializer.save()
+        spending = serializer.save()
+        new_account_id = spending.account_id
+        new_amount = spending.amount
+        if old_account_id == new_account_id:
+            diff = new_amount - old_amount
+            if diff != 0:
+                Account.objects.filter(pk=new_account_id).update(balance=F('balance') - diff)
+        else:
+            Account.objects.filter(pk=old_account_id).update(balance=F('balance') + old_amount)
+            Account.objects.filter(pk=new_account_id).update(balance=F('balance') - new_amount)
         return Response(serializer.data)
 
     def delete(self, request, pk):
         obj = self._get(request, pk)
         if not obj:
             return Response({'message': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
+        Account.objects.filter(pk=obj.account_id).update(balance=F('balance') + obj.amount)
         obj.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
 
