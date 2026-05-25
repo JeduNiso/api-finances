@@ -1,7 +1,7 @@
 from decimal import Decimal
 
 from django.contrib.auth import authenticate
-from django.db.models import Sum
+from django.db.models import Q, Sum
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.permissions import AllowAny, IsAuthenticated
@@ -462,21 +462,33 @@ class DebtDetailView(APIView):
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
+USD_TO_BOB = Decimal('9.97')
+
+
 class DebtSummaryView(APIView):
     def get(self, request):
         _, member_ids = _family_context(request.user)
-        all_qs = Debt.objects.filter(user__in=member_ids)
-        active_qs = all_qs.filter(status='active')
-        agg = all_qs.aggregate(
-            total_original=Sum('original_amount'),
-            total_current=Sum('current_balance'),
-        )
-        total_original = agg['total_original'] or Decimal('0')
-        total_current = agg['total_current'] or Decimal('0')
+        all_qs = Debt.objects.filter(user__in=member_ids).select_related('account')
+        active_count = all_qs.filter(status='active').count()
+
+        def _agg(qs):
+            r = qs.aggregate(orig=Sum('original_amount'), curr=Sum('current_balance'))
+            orig = r['orig'] or Decimal('0')
+            curr = r['curr'] or Decimal('0')
+            return curr, orig - curr  # owed, paid
+
+        bob_qs = all_qs.filter(Q(account__currency='BOB') | Q(account__isnull=True))
+        usd_qs = all_qs.filter(account__currency='USD')
+
+        bob_owed, bob_paid = _agg(bob_qs)
+        usd_owed, usd_paid = _agg(usd_qs)
+
         return Response({
-            'total_owed': total_current,
-            'total_paid': total_original - total_current,
-            'active_count': active_qs.count(),
+            'bob': {'owed': bob_owed, 'paid': bob_paid},
+            'usd': {'owed': usd_owed, 'paid': usd_paid},
+            'total_owed_bob': bob_owed + usd_owed * USD_TO_BOB,
+            'total_paid_bob': bob_paid + usd_paid * USD_TO_BOB,
+            'active_count': active_count,
         })
 
 
