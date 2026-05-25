@@ -39,8 +39,9 @@ urlpatterns = [
     path('debts/<int:pk>',           views.DebtDetailView.as_view(),         name='debts-detail'),
     path('debts',                    views.DebtListCreateView.as_view(),     name='debts-list'),
 
-    # ── Banks (read-only catalog) ──────────────────────────────────────────────
-    path('banks', views.BankListView.as_view(), name='banks-list'),
+    # ── Banks ─────────────────────────────────────────────────────────────────
+    path('banks/<int:pk>', views.BankDetailView.as_view(), name='banks-detail'),
+    path('banks',          views.BankListView.as_view(),   name='banks-list'),
 
     # ── Categories ────────────────────────────────────────────────────────────
     path('categories/<int:pk>', views.CategoryDetailView.as_view(),     name='categories-detail'),

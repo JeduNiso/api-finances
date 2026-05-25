@@ -459,6 +459,42 @@ class BankListView(APIView):
     def get(self, request):
         return Response(BankSerializer(Bank.objects.all(), many=True).data)
 
+    def post(self, request):
+        if not request.user.is_staff:
+            return Response({'message': 'Forbidden.'}, status=status.HTTP_403_FORBIDDEN)
+        serializer = BankSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+
+class BankDetailView(APIView):
+    def _get(self, pk):
+        try:
+            return Bank.objects.get(pk=pk)
+        except Bank.DoesNotExist:
+            return None
+
+    def put(self, request, pk):
+        if not request.user.is_staff:
+            return Response({'message': 'Forbidden.'}, status=status.HTTP_403_FORBIDDEN)
+        obj = self._get(pk)
+        if not obj:
+            return Response({'message': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
+        serializer = BankSerializer(obj, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data)
+
+    def delete(self, request, pk):
+        if not request.user.is_staff:
+            return Response({'message': 'Forbidden.'}, status=status.HTTP_403_FORBIDDEN)
+        obj = self._get(pk)
+        if not obj:
+            return Response({'message': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
+        obj.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
 
 # ─── Categories ───────────────────────────────────────────────────────────────
 
