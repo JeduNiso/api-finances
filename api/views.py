@@ -11,13 +11,14 @@ from rest_framework_simplejwt.tokens import RefreshToken
 
 from .models import (
     User, Family, FamilyMember, Bank, Account, UserAccount,
-    Category, Spending, Expense, ExpenseLog, Debt, DebtPayment,
+    Category, Spending, Expense, ExpenseLog, Debt, DebtPayment, Income,
 )
 from .serializers import (
     RegisterSerializer, UserSerializer, UserWriteSerializer,
     FamilySerializer, FamilyMemberSerializer, BankSerializer,
     AccountSerializer, CategorySerializer, SpendingSerializer,
     ExpenseSerializer, ExpenseLogSerializer, DebtSerializer, DebtPaymentSerializer,
+    IncomeSerializer,
 )
 
 
@@ -662,4 +663,48 @@ class UserDetailView(APIView):
         if not user:
             return Response({'message': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
         user.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+# ─── Incomes ──────────────────────────────────────────────────────────────────
+
+class IncomeListCreateView(APIView):
+    def get(self, request):
+        family, member_ids = _family_context(request.user)
+        qs = (
+            Income.objects.filter(user__in=member_ids)
+            .select_related('account', 'account__bank', 'user')
+            .order_by('-received_at', '-created_at')
+        )
+        return Response(IncomeSerializer(qs, many=True).data)
+
+    def post(self, request):
+        serializer = IncomeSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        serializer.save(user=request.user)
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+
+class IncomeDetailView(APIView):
+    def _get(self, request, pk):
+        family, member_ids = _family_context(request.user)
+        try:
+            return Income.objects.filter(user__in=member_ids).get(pk=pk)
+        except Income.DoesNotExist:
+            return None
+
+    def put(self, request, pk):
+        obj = self._get(request, pk)
+        if not obj:
+            return Response({'message': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
+        serializer = IncomeSerializer(obj, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data)
+
+    def delete(self, request, pk):
+        obj = self._get(request, pk)
+        if not obj:
+            return Response({'message': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
+        obj.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)

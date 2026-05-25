@@ -50,4 +50,8 @@ urlpatterns = [
     # ── Users (admin) ─────────────────────────────────────────────────────────
     path('users/<int:pk>', views.UserDetailView.as_view(),     name='users-detail'),
     path('users',          views.UserListCreateView.as_view(), name='users-list'),
+
+    # ── Incomes ───────────────────────────────────────────────────────────────
+    path('incomes/<int:pk>', views.IncomeDetailView.as_view(),     name='incomes-detail'),
+    path('incomes',          views.IncomeListCreateView.as_view(), name='incomes-list'),
 ]

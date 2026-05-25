@@ -246,3 +246,19 @@ class DebtPayment(models.Model):
 
     def __str__(self):
         return f"Payment {self.id} for {self.debt.creditor}"
+
+
+class Income(models.Model):
+    amount = models.DecimalField(max_digits=15, decimal_places=2)
+    description = models.CharField(max_length=255)
+    received_at = models.DateField()
+    account = models.ForeignKey(Account, on_delete=models.RESTRICT, related_name='incomes')
+    user = models.ForeignKey(User, on_delete=models.RESTRICT, related_name='incomes')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'incomes'
+
+    def __str__(self):
+        return f"{self.description} – {self.amount}"

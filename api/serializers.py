@@ -1,7 +1,7 @@
 from rest_framework import serializers
 from .models import (
     User, Role, Family, FamilyMember, Bank, Account,
-    Category, Spending, Expense, ExpenseLog, Debt, DebtPayment,
+    Category, Spending, Expense, ExpenseLog, Debt, DebtPayment, Income,
 )
 
 
@@ -187,3 +187,20 @@ class DebtSerializer(serializers.ModelSerializer):
             'account_id', 'account', 'user_id', 'user', 'progress_percentage', 'payments', 'created_at',
         )
         read_only_fields = ('id', 'user_id', 'user', 'account', 'progress_percentage', 'payments', 'created_at')
+
+
+class IncomeSerializer(serializers.ModelSerializer):
+    account = AccountSerializer(read_only=True)
+    account_id = serializers.PrimaryKeyRelatedField(
+        queryset=Account.objects.all(),
+        source='account',
+    )
+    user = UserSerializer(read_only=True)
+
+    class Meta:
+        model = Income
+        fields = (
+            'id', 'amount', 'description', 'received_at',
+            'account_id', 'account', 'user_id', 'user', 'created_at',
+        )
+        read_only_fields = ('id', 'user_id', 'user', 'account', 'created_at')
