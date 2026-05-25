@@ -283,6 +283,31 @@ CREATE TABLE IF NOT EXISTS `users_accounts` (
   CONSTRAINT `users_accounts_user_id_fk` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+-- ------------------------------------------------------------
+-- JWT Token Blacklist (simplejwt, depends on users)
+-- ------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS `token_blacklist_outstandingtoken` (
+  `id` bigint NOT NULL AUTO_INCREMENT,
+  `token` longtext NOT NULL,
+  `jti` varchar(255) NOT NULL,
+  `created_at` datetime(6) DEFAULT NULL,
+  `expires_at` datetime(6) NOT NULL,
+  `user_id` bigint DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `token_blacklist_outstandingtoken_jti_uniq` (`jti`),
+  CONSTRAINT `token_blacklist_outstandingtoken_user_id_fk` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS `token_blacklist_blacklistedtoken` (
+  `id` bigint NOT NULL AUTO_INCREMENT,
+  `blacklisted_at` datetime(6) NOT NULL,
+  `token_id` bigint NOT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `token_blacklist_blacklistedtoken_token_id_uniq` (`token_id`),
+  CONSTRAINT `token_blacklist_blacklistedtoken_token_id_fk` FOREIGN KEY (`token_id`) REFERENCES `token_blacklist_outstandingtoken` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 SET FOREIGN_KEY_CHECKS = 1;
 
 -- ------------------------------------------------------------
@@ -305,4 +330,16 @@ INSERT IGNORE INTO `django_migrations` (`app`, `name`, `applied`) VALUES
   ('auth',         '0010_alter_group_name_max_length',      NOW(6)),
   ('auth',         '0011_update_proxy_permissions',         NOW(6)),
   ('auth',         '0012_alter_user_first_name_max_length', NOW(6)),
-  ('api',          '0001_initial',                          NOW(6));
+  ('api',          '0001_initial',                          NOW(6)),
+  ('token_blacklist', '0001_initial',                       NOW(6)),
+  ('token_blacklist', '0002_outstandingtoken_jti_hex',      NOW(6)),
+  ('token_blacklist', '0003_auto_20171017_2007',            NOW(6)),
+  ('token_blacklist', '0004_auto_20171017_2013',            NOW(6)),
+  ('token_blacklist', '0005_remove_outstandingtoken_jti',   NOW(6)),
+  ('token_blacklist', '0006_auto_20171017_2113',            NOW(6)),
+  ('token_blacklist', '0007_auto_20171017_2214',            NOW(6)),
+  ('token_blacklist', '0008_migrate_to_bigautofield',       NOW(6)),
+  ('token_blacklist', '0009_update_jti_field',              NOW(6)),
+  ('token_blacklist', '0010_fix_migrate',                   NOW(6)),
+  ('token_blacklist', '0011_linearize_history',             NOW(6)),
+  ('token_blacklist', '0012_alter_outstandingtoken_user',   NOW(6));

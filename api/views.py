@@ -3,7 +3,7 @@ from datetime import timedelta
 from decimal import Decimal
 
 from django.contrib.auth import authenticate
-from django.db.models import Q, Sum
+from django.db.models import F, Q, Sum
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.permissions import AllowAny, IsAuthenticated
@@ -300,7 +300,11 @@ class SpendingListCreateView(APIView):
     def post(self, request):
         serializer = SpendingSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        serializer.save(user=request.user)
+        spending = serializer.save(user=request.user)
+        # Deduct from account balance
+        Account.objects.filter(pk=spending.account_id).update(
+            balance=F('balance') - spending.amount
+        )
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
 
@@ -437,6 +441,10 @@ class ExpensePayView(APIView):
             paid_at=paid_at,
             notes=notes,
         )
+        # Deduct from account balance
+        Account.objects.filter(pk=expense.account_id).update(
+            balance=F('balance') - amount_paid
+        )
         # If linked to a debt, record payment and reduce balance
         if expense.debt_id and expense.debt:
             DebtPayment.objects.create(
@@ -542,9 +550,13 @@ class DebtPaymentCreateView(APIView):
         if not amount:
             return Response({'message': 'Amount is required.'}, status=status.HTTP_400_BAD_REQUEST)
 
-        account_id = request.data.get('account_id')
+        # Use the account provided in the request, or fall back to the debt's account
+        account_id = request.data.get('account_id') or debt.account_id
         if not account_id:
-            return Response({'message': 'account_id is required.'}, status=status.HTTP_400_BAD_REQUEST)
+            return Response(
+                {'message': 'account_id is required (the debt has no associated account).'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         today = timezone.now().date()
         payment = DebtPayment.objects.create(
@@ -560,6 +572,11 @@ class DebtPaymentCreateView(APIView):
         if debt.current_balance == Decimal('0'):
             debt.status = 'paid'
         debt.save()
+
+        # Deduct from the account balance
+        Account.objects.filter(pk=account_id).update(
+            balance=F('balance') - amount_dec
+        )
 
         return Response(DebtPaymentSerializer(payment).data, status=status.HTTP_201_CREATED)
 
