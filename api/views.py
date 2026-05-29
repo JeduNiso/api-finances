@@ -295,6 +295,15 @@ class SpendingListCreateView(APIView):
             .select_related('category', 'account', 'account__bank', 'user')
             .order_by('-spent_at')
         )
+        p = request.query_params
+        if p.get('category_id'):
+            qs = qs.filter(category_id=p['category_id'])
+        if p.get('account_id'):
+            qs = qs.filter(account_id=p['account_id'])
+        if p.get('date_from'):
+            qs = qs.filter(spent_at__gte=p['date_from'])
+        if p.get('date_to'):
+            qs = qs.filter(spent_at__lte=p['date_to'])
         return Response(SpendingSerializer(qs, many=True).data)
 
     def post(self, request):
