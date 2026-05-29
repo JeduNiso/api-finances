@@ -452,25 +452,33 @@ class ExpensePayView(APIView):
         except Expense.DoesNotExist:
             return Response({'message': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
         today = timezone.now().date()
-        amount_paid = Decimal(str(request.data.get('amount_paid', expense.amount)))
+        amount_paid = Decimal(str(request.data.get('amount', request.data.get('amount_paid', expense.amount))))
         paid_at = request.data.get('paid_at', today.isoformat())
         notes = request.data.get('notes', '')
+
+        # Use the account chosen by the user, falling back to expense.account
+        account_id = request.data.get('account_id') or expense.account_id
+        try:
+            pay_account = Account.objects.get(pk=account_id)
+        except Account.DoesNotExist:
+            pay_account = expense.account
+
         log = ExpenseLog.objects.create(
             expense=expense,
-            account=expense.account,
+            account=pay_account,
             amount_paid=amount_paid,
             paid_at=paid_at,
             notes=notes,
         )
-        # Deduct from account balance
-        Account.objects.filter(pk=expense.account_id).update(
+        # Deduct from the chosen account balance
+        Account.objects.filter(pk=pay_account.pk).update(
             balance=F('balance') - amount_paid
         )
         # If linked to a debt, record payment and reduce balance
         if expense.debt_id and expense.debt:
             DebtPayment.objects.create(
                 debt=expense.debt,
-                account=expense.account,
+                account=pay_account,
                 amount=amount_paid,
                 paid_at=paid_at,
                 notes=notes or f'Auto from expense: {expense.name}',
