@@ -271,7 +271,7 @@ class Transfer(models.Model):
     origin_account = models.ForeignKey(Account, on_delete=models.RESTRICT, related_name='transfers_out')
     destination_account = models.ForeignKey(Account, on_delete=models.RESTRICT, related_name='transfers_in')
     spending = models.OneToOneField(
-        'Spending', null=True, blank=True, on_delete=models.SET_NULL, related_name='transfer'
+        'Spending', null=True, blank=True, on_delete=models.DO_NOTHING, related_name='transfer'
     )
     user = models.ForeignKey(User, on_delete=models.RESTRICT, related_name='transfers')
     created_at = models.DateTimeField(auto_now_add=True)
