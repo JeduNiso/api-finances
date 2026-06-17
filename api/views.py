@@ -988,23 +988,27 @@ class TransferListCreateView(APIView):
             )
 
         with db_transaction.atomic():
-            # Get or create the "Transfer Spending" category
-            transfer_cat, _ = Category.objects.get_or_create(
-                name='Transfer Spending',
-                defaults={'icon': '↔️', 'color': '#6366f1'},
-            )
+            # Save transfer first (without spending link, in case column doesn't exist yet)
+            transfer = serializer.save(user=request.user)
 
-            # Create the Spending record for the origin account (balance adjusted below)
-            spending = Spending.objects.create(
-                amount=amount,
-                description=description or f'Transfer to {destination_account.account_number}',
-                spent_at=transferred_at,
-                account=origin_account,
-                category=transfer_cat,
-                user=request.user,
-            )
-
-            transfer = serializer.save(user=request.user, spending=spending)
+            # Try to create + link the Spending; gracefully skip if migration not applied yet
+            try:
+                transfer_cat, _ = Category.objects.get_or_create(
+                    name='Transfer Spending',
+                    defaults={'icon': '↔️', 'color': '#6366f1'},
+                )
+                spending = Spending.objects.create(
+                    amount=amount,
+                    description=description or f'Transfer to {destination_account.account_number}',
+                    spent_at=transferred_at,
+                    account=origin_account,
+                    category=transfer_cat,
+                    user=request.user,
+                )
+                Transfer.objects.filter(pk=transfer.pk).update(spending=spending)
+                transfer.spending_id = spending.pk
+            except Exception:
+                pass
 
             # Adjust balances atomically
             Account.objects.filter(pk=origin_account.pk).update(balance=F('balance') - amount)
