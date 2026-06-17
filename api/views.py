@@ -1055,6 +1055,7 @@ class TransferListCreateView(APIView):
                     balance=F('balance') + destination_amount)
 
         except Exception as e:
+            print(f"Error creating transfer: {e}")
             return Response({'message': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
         return Response({
