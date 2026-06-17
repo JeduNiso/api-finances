@@ -981,6 +981,10 @@ class TransferListCreateView(APIView):
         transferred_at      = serializer.validated_data['transferred_at']
         description         = serializer.validated_data.get('description', '') or ''
 
+        # destination_amount allows cross-currency transfers (different credited amount)
+        raw_dest = request.data.get('destination_amount')
+        destination_amount = Decimal(str(raw_dest)) if raw_dest else amount
+
         if origin_account.pk == destination_account.pk:
             return Response(
                 {'message': 'Origin and destination accounts must be different.'},
@@ -1010,9 +1014,9 @@ class TransferListCreateView(APIView):
             except Exception:
                 pass
 
-            # Adjust balances atomically
+            # Adjust balances: origin debited by amount, destination credited by destination_amount
             Account.objects.filter(pk=origin_account.pk).update(balance=F('balance') - amount)
-            Account.objects.filter(pk=destination_account.pk).update(balance=F('balance') + amount)
+            Account.objects.filter(pk=destination_account.pk).update(balance=F('balance') + destination_amount)
 
         return Response(TransferSerializer(transfer).data, status=status.HTTP_201_CREATED)
 
