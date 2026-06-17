@@ -982,7 +982,25 @@ class TransferListCreateView(APIView):
             )
 
         with db_transaction.atomic():
-            transfer = serializer.save(user=request.user)
+            # Get or create the "Transfer Spending" category
+            transfer_cat, _ = Category.objects.get_or_create(
+                name='Transfer Spending',
+                defaults={'icon': '↔️', 'color': '#6366f1'},
+            )
+
+            # Create the Spending record for the origin account (balance adjusted below)
+            spending = Spending.objects.create(
+                amount=amount,
+                description=description or f'Transfer to {destination_account.account_number}',
+                spent_at=transferred_at,
+                account=origin_account,
+                category=transfer_cat,
+                user=request.user,
+            )
+
+            transfer = serializer.save(user=request.user, spending=spending)
+
+            # Adjust balances atomically
             Account.objects.filter(pk=origin_account.pk).update(balance=F('balance') - amount)
             Account.objects.filter(pk=destination_account.pk).update(balance=F('balance') + amount)
 
@@ -1004,5 +1022,9 @@ class TransferDetailView(APIView):
             # Reverse the balance changes
             Account.objects.filter(pk=obj.origin_account_id).update(balance=F('balance') + obj.amount)
             Account.objects.filter(pk=obj.destination_account_id).update(balance=F('balance') - obj.amount)
+            # Delete linked spending (if present); no extra balance reversal needed
+            spending_id = obj.spending_id
             obj.delete()
+            if spending_id:
+                Spending.objects.filter(pk=spending_id).delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
