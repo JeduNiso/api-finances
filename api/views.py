@@ -992,29 +992,49 @@ class TransferListCreateView(APIView):
             )
 
         with db_transaction.atomic():
-            # Save transfer first (without spending link, in case column doesn't exist yet)
-            transfer = serializer.save(user=request.user)
-
-            # Try to create + link the Spending; gracefully skip if migration not applied yet
+            # Try serializer.save(); if spending_id column doesn't exist yet fall back to
+            # a raw INSERT that only touches the base columns (PostgreSQL safe).
             try:
-                transfer_cat, _ = Category.objects.get_or_create(
-                    name='Transfer Spending',
-                    defaults={'icon': '↔️', 'color': '#6366f1'},
-                )
-                spending = Spending.objects.create(
-                    amount=amount,
-                    description=description or f'Transfer to {destination_account.account_number}',
-                    spent_at=transferred_at,
-                    account=origin_account,
-                    category=transfer_cat,
-                    user=request.user,
-                )
-                Transfer.objects.filter(pk=transfer.pk).update(spending=spending)
-                transfer.spending_id = spending.pk
+                with db_transaction.atomic():   # savepoint — isolates potential column error
+                    transfer = serializer.save(user=request.user)
+            except Exception:
+                from django.db import connection
+                with connection.cursor() as cursor:
+                    cursor.execute(
+                        """INSERT INTO transfers
+                               (amount, description, transferred_at,
+                                origin_account_id, destination_account_id,
+                                user_id, created_at)
+                           VALUES (%s, %s, %s, %s, %s, %s, NOW())
+                           RETURNING id""",
+                        [str(amount), description, str(transferred_at),
+                         origin_account.pk, destination_account.pk, request.user.pk],
+                    )
+                    transfer_id = cursor.fetchone()[0]
+                transfer = Transfer.objects.get(pk=transfer_id)
+
+            # Create + link Spending inside a savepoint so a DB error here
+            # cannot corrupt the outer transaction (PostgreSQL requirement).
+            try:
+                with db_transaction.atomic():
+                    transfer_cat, _ = Category.objects.get_or_create(
+                        name='Transfer Spending',
+                        defaults={'icon': '↔️', 'color': '#6366f1'},
+                    )
+                    spending = Spending.objects.create(
+                        amount=amount,
+                        description=description or f'Transfer to {destination_account.account_number}',
+                        spent_at=transferred_at,
+                        account=origin_account,
+                        category=transfer_cat,
+                        user=request.user,
+                    )
+                    Transfer.objects.filter(pk=transfer.pk).update(spending=spending)
+                    transfer.spending_id = spending.pk
             except Exception:
                 pass
 
-            # Adjust balances: origin debited by amount, destination credited by destination_amount
+            # Adjust balances — always runs regardless of spending link outcome
             Account.objects.filter(pk=origin_account.pk).update(balance=F('balance') - amount)
             Account.objects.filter(pk=destination_account.pk).update(balance=F('balance') + destination_amount)
 
