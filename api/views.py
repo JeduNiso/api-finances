@@ -991,30 +991,41 @@ class TransferListCreateView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        with db_transaction.atomic():
-            # Try serializer.save(); if spending_id column doesn't exist yet fall back to
-            # a raw INSERT that only touches the base columns (PostgreSQL safe).
-            try:
-                with db_transaction.atomic():   # savepoint — isolates potential column error
-                    transfer = serializer.save(user=request.user)
-            except Exception:
-                from django.db import connection
-                with connection.cursor() as cursor:
-                    cursor.execute(
-                        """INSERT INTO transfers
-                               (amount, description, transferred_at,
-                                origin_account_id, destination_account_id,
-                                user_id, created_at)
-                           VALUES (%s, %s, %s, %s, %s, %s, NOW())
-                           RETURNING id""",
-                        [str(amount), description, str(transferred_at),
-                         origin_account.pk, destination_account.pk, request.user.pk],
-                    )
-                    transfer_id = cursor.fetchone()[0]
-                transfer = Transfer.objects.get(pk=transfer_id)
+        from django.db import connection
 
-            # Create + link Spending inside a savepoint so a DB error here
-            # cannot corrupt the outer transaction (PostgreSQL requirement).
+        with db_transaction.atomic():
+            # Always use raw SQL for the INSERT — avoids any issue with spending_id
+            # column not existing yet in production (migrations pending).
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """INSERT INTO transfers
+                           (amount, description, transferred_at,
+                            origin_account_id, destination_account_id,
+                            user_id, created_at)
+                       VALUES (%s, %s, %s, %s, %s, %s, NOW())
+                       RETURNING id""",
+                    [str(amount), description, str(transferred_at),
+                     origin_account.pk, destination_account.pk, request.user.pk],
+                )
+                transfer_id = cursor.fetchone()[0]
+
+            # Build an in-memory Transfer instance for the response
+            # (avoids SELECT that would include spending_id if column is missing)
+            transfer = Transfer()
+            transfer.id = transfer_id
+            transfer.pk = transfer_id
+            transfer.amount = amount
+            transfer.description = description
+            transfer.transferred_at = transferred_at
+            transfer.origin_account = origin_account
+            transfer.origin_account_id = origin_account.pk
+            transfer.destination_account = destination_account
+            transfer.destination_account_id = destination_account.pk
+            transfer.user = request.user
+            transfer.user_id = request.user.pk
+            transfer.spending_id = None
+
+            # Create + link Spending inside a savepoint; skip if column missing
             try:
                 with db_transaction.atomic():
                     transfer_cat, _ = Category.objects.get_or_create(
@@ -1029,12 +1040,16 @@ class TransferListCreateView(APIView):
                         category=transfer_cat,
                         user=request.user,
                     )
-                    Transfer.objects.filter(pk=transfer.pk).update(spending=spending)
+                    with connection.cursor() as cursor:
+                        cursor.execute(
+                            "UPDATE transfers SET spending_id = %s WHERE id = %s",
+                            [spending.pk, transfer_id],
+                        )
                     transfer.spending_id = spending.pk
             except Exception:
                 pass
 
-            # Adjust balances — always runs regardless of spending link outcome
+            # Adjust balances — always runs
             Account.objects.filter(pk=origin_account.pk).update(balance=F('balance') - amount)
             Account.objects.filter(pk=destination_account.pk).update(balance=F('balance') + destination_amount)
 

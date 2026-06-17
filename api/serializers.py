@@ -229,6 +229,6 @@ class TransferSerializer(serializers.ModelSerializer):
             'id', 'amount', 'description', 'transferred_at',
             'origin_account_id', 'origin_account',
             'destination_account_id', 'destination_account',
-            'spending_id', 'user_id', 'user', 'created_at',
+            'user_id', 'user', 'created_at',
         )
-        read_only_fields = ('id', 'spending_id', 'user_id', 'user', 'origin_account', 'destination_account', 'created_at')
+        read_only_fields = ('id', 'user_id', 'user', 'origin_account', 'destination_account', 'created_at')
