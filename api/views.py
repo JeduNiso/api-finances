@@ -972,88 +972,101 @@ class TransferListCreateView(APIView):
         return Response(TransferSerializer(qs, many=True).data)
 
     def post(self, request):
-        serializer = TransferSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
+        from django.db import connection
 
-        origin_account      = serializer.validated_data['origin_account']
-        destination_account = serializer.validated_data['destination_account']
-        amount              = serializer.validated_data['amount']
-        transferred_at      = serializer.validated_data['transferred_at']
-        description         = serializer.validated_data.get('description', '') or ''
+        # ── Manual validation (no ORM serializer) ─────────────────────────────
+        origin_id    = request.data.get('origin_account_id')
+        dest_id      = request.data.get('destination_account_id')
+        amount_raw   = request.data.get('amount')
+        dest_raw     = request.data.get('destination_amount')
+        transferred_at = request.data.get('transferred_at')
+        description  = request.data.get('description') or ''
 
-        # destination_amount allows cross-currency transfers (different credited amount)
-        raw_dest = request.data.get('destination_amount')
-        destination_amount = Decimal(str(raw_dest)) if raw_dest else amount
+        if not all([origin_id, dest_id, amount_raw, transferred_at]):
+            return Response(
+                {'message': 'origin_account_id, destination_account_id, amount and transferred_at are required.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
-        if origin_account.pk == destination_account.pk:
+        if str(origin_id) == str(dest_id):
             return Response(
                 {'message': 'Origin and destination accounts must be different.'},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        from django.db import connection
+        try:
+            origin_account      = Account.objects.select_related('bank').get(pk=origin_id)
+            destination_account = Account.objects.select_related('bank').get(pk=dest_id)
+        except Account.DoesNotExist:
+            return Response({'message': 'Account not found.'}, status=status.HTTP_404_NOT_FOUND)
 
-        with db_transaction.atomic():
-            # Always use raw SQL for the INSERT — avoids any issue with spending_id
-            # column not existing yet in production (migrations pending).
-            with connection.cursor() as cursor:
-                cursor.execute(
-                    """INSERT INTO transfers
-                           (amount, description, transferred_at,
-                            origin_account_id, destination_account_id,
-                            user_id, created_at)
-                       VALUES (%s, %s, %s, %s, %s, %s, NOW())
-                       RETURNING id""",
-                    [str(amount), description, str(transferred_at),
-                     origin_account.pk, destination_account.pk, request.user.pk],
-                )
-                transfer_id = cursor.fetchone()[0]
+        try:
+            amount             = Decimal(str(amount_raw))
+            destination_amount = Decimal(str(dest_raw)) if dest_raw else amount
+        except Exception:
+            return Response({'message': 'Invalid amount.'}, status=status.HTTP_400_BAD_REQUEST)
 
-            # Build an in-memory Transfer instance for the response
-            # (avoids SELECT that would include spending_id if column is missing)
-            transfer = Transfer()
-            transfer.id = transfer_id
-            transfer.pk = transfer_id
-            transfer.amount = amount
-            transfer.description = description
-            transfer.transferred_at = transferred_at
-            transfer.origin_account = origin_account
-            transfer.origin_account_id = origin_account.pk
-            transfer.destination_account = destination_account
-            transfer.destination_account_id = destination_account.pk
-            transfer.user = request.user
-            transfer.user_id = request.user.pk
-            transfer.spending_id = None
-
-            # Create + link Spending inside a savepoint; skip if column missing
-            try:
-                with db_transaction.atomic():
-                    transfer_cat, _ = Category.objects.get_or_create(
-                        name='Transfer Spending',
-                        defaults={'icon': '↔️', 'color': '#6366f1'},
+        try:
+            with db_transaction.atomic():
+                # ── INSERT transfer via raw SQL ─────────────────────────────────
+                with connection.cursor() as cur:
+                    cur.execute(
+                        """INSERT INTO transfers
+                               (amount, description, transferred_at,
+                                origin_account_id, destination_account_id,
+                                user_id, created_at)
+                           VALUES (%s, %s, %s, %s, %s, %s, NOW())
+                           RETURNING id, created_at""",
+                        [str(amount), description, transferred_at,
+                         origin_account.pk, destination_account.pk, request.user.pk],
                     )
-                    spending = Spending.objects.create(
-                        amount=amount,
-                        description=description or f'Transfer to {destination_account.account_number}',
-                        spent_at=transferred_at,
-                        account=origin_account,
-                        category=transfer_cat,
-                        user=request.user,
-                    )
-                    with connection.cursor() as cursor:
-                        cursor.execute(
-                            "UPDATE transfers SET spending_id = %s WHERE id = %s",
-                            [spending.pk, transfer_id],
+                    row = cur.fetchone()
+                    transfer_id, created_at = row[0], row[1]
+
+                # ── Create Spending in savepoint ────────────────────────────────
+                spending_id = None
+                try:
+                    with db_transaction.atomic():
+                        cat, _ = Category.objects.get_or_create(
+                            name='Transfer Spending',
+                            defaults={'icon': '↔️', 'color': '#6366f1'},
                         )
-                    transfer.spending_id = spending.pk
-            except Exception:
-                pass
+                        spending = Spending.objects.create(
+                            amount=amount,
+                            description=description or f'Transfer to {destination_account.account_number}',
+                            spent_at=transferred_at,
+                            account=origin_account,
+                            category=cat,
+                            user=request.user,
+                        )
+                        spending_id = spending.pk
+                        with connection.cursor() as cur:
+                            cur.execute(
+                                "UPDATE transfers SET spending_id = %s WHERE id = %s",
+                                [spending_id, transfer_id],
+                            )
+                except Exception:
+                    pass
 
-            # Adjust balances — always runs
-            Account.objects.filter(pk=origin_account.pk).update(balance=F('balance') - amount)
-            Account.objects.filter(pk=destination_account.pk).update(balance=F('balance') + destination_amount)
+                # ── Adjust balances ─────────────────────────────────────────────
+                Account.objects.filter(pk=origin_account.pk).update(
+                    balance=F('balance') - amount)
+                Account.objects.filter(pk=destination_account.pk).update(
+                    balance=F('balance') + destination_amount)
 
-        return Response(TransferSerializer(transfer).data, status=status.HTTP_201_CREATED)
+        except Exception as e:
+            return Response({'message': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+        return Response({
+            'id':                    transfer_id,
+            'amount':                str(amount),
+            'description':           description,
+            'transferred_at':        transferred_at,
+            'origin_account_id':     origin_account.pk,
+            'destination_account_id': destination_account.pk,
+            'user_id':               request.user.pk,
+            'created_at':            str(created_at),
+        }, status=status.HTTP_201_CREATED)
 
 
 class TransferDetailView(APIView):
