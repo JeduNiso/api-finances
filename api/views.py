@@ -349,6 +349,8 @@ class SpendingDetailView(APIView):
         obj = self._get(request, pk)
         if not obj:
             return Response({'message': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
+        # If this spending is linked to a transfer, nullify that link first
+        Transfer.objects.filter(spending=obj).update(spending=None)
         Account.objects.filter(pk=obj.account_id).update(balance=F('balance') + obj.amount)
         obj.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
