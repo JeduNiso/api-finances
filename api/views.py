@@ -13,14 +13,14 @@ from rest_framework_simplejwt.tokens import RefreshToken
 
 from .models import (
     User, Family, FamilyMember, Bank, Account, UserAccount,
-    Category, Spending, Expense, ExpenseLog, Debt, DebtPayment, Income,
+    Category, Spending, Expense, ExpenseLog, Debt, DebtPayment, Income, Transfer,
 )
 from .serializers import (
     RegisterSerializer, UserSerializer, UserWriteSerializer,
     FamilySerializer, FamilyMemberSerializer, BankSerializer,
     AccountSerializer, CategorySerializer, SpendingSerializer,
     ExpenseSerializer, ExpenseLogSerializer, DebtSerializer, DebtPaymentSerializer,
-    IncomeSerializer,
+    IncomeSerializer, TransferSerializer,
 )
 
 
@@ -946,3 +946,63 @@ class ReportView(APIView):
                 'count':               len(rows),
             },
         })
+
+
+# ─── Transfers ─────────────────────────────────────────────────────────────────────────────
+
+from django.db import transaction as db_transaction
+
+
+class TransferListCreateView(APIView):
+    def get(self, request):
+        _, member_ids = _family_context(request.user)
+        qs = (
+            Transfer.objects
+            .filter(user__in=member_ids)
+            .select_related('origin_account', 'origin_account__bank',
+                            'destination_account', 'destination_account__bank', 'user')
+            .order_by('-transferred_at')
+        )
+        return Response(TransferSerializer(qs, many=True).data)
+
+    def post(self, request):
+        serializer = TransferSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        origin_account      = serializer.validated_data['origin_account']
+        destination_account = serializer.validated_data['destination_account']
+        amount              = serializer.validated_data['amount']
+        transferred_at      = serializer.validated_data['transferred_at']
+        description         = serializer.validated_data.get('description', '') or ''
+
+        if origin_account.pk == destination_account.pk:
+            return Response(
+                {'message': 'Origin and destination accounts must be different.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        with db_transaction.atomic():
+            transfer = serializer.save(user=request.user)
+            Account.objects.filter(pk=origin_account.pk).update(balance=F('balance') - amount)
+            Account.objects.filter(pk=destination_account.pk).update(balance=F('balance') + amount)
+
+        return Response(TransferSerializer(transfer).data, status=status.HTTP_201_CREATED)
+
+
+class TransferDetailView(APIView):
+    def _get(self, request, pk):
+        try:
+            return Transfer.objects.filter(user=request.user).get(pk=pk)
+        except Transfer.DoesNotExist:
+            return None
+
+    def delete(self, request, pk):
+        obj = self._get(request, pk)
+        if not obj:
+            return Response({'message': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
+        with db_transaction.atomic():
+            # Reverse the balance changes
+            Account.objects.filter(pk=obj.origin_account_id).update(balance=F('balance') + obj.amount)
+            Account.objects.filter(pk=obj.destination_account_id).update(balance=F('balance') - obj.amount)
+            obj.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)

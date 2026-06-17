@@ -57,4 +57,8 @@ urlpatterns = [
 
     # ── Report ────────────────────────────────────────────────────────────────
     path('report', views.ReportView.as_view(), name='report'),
+
+    # ── Transfers ─────────────────────────────────────────────────────────────
+    path('transfers/<int:pk>', views.TransferDetailView.as_view(),     name='transfers-detail'),
+    path('transfers',          views.TransferListCreateView.as_view(), name='transfers-list'),
 ]
