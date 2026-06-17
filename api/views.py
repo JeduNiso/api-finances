@@ -319,8 +319,9 @@ class SpendingListCreateView(APIView):
 
 class SpendingDetailView(APIView):
     def _get(self, request, pk):
+        _, member_ids = _family_context(request.user)
         try:
-            return Spending.objects.filter(user=request.user).get(pk=pk)
+            return Spending.objects.filter(user__in=member_ids).get(pk=pk)
         except Spending.DoesNotExist:
             return None
 
