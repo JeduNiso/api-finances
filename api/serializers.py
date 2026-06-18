@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from .models import (
-    User, Role, Family, FamilyMember, Bank, Account,
+    Budget, BudgetCategory, User, Role, Family, FamilyMember, Bank, Account,
     Category, Spending, Expense, ExpenseLog, Debt, DebtPayment, Income, Transfer,
 )
 
@@ -232,3 +232,31 @@ class TransferSerializer(serializers.ModelSerializer):
             'user_id', 'user', 'created_at',
         )
         read_only_fields = ('id', 'user_id', 'user', 'origin_account', 'destination_account', 'created_at')
+
+
+class BudgetSerializer(serializers.ModelSerializer):
+    family_id = serializers.PrimaryKeyRelatedField(
+        queryset=Family.objects.all(),
+        source='family',
+    )
+    categories = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Budget
+        fields = ('id', 'name', 'total_amount', 'family_id', 'categories', 'created_at')
+        read_only_fields = ('id', 'categories', 'created_at')
+
+    def get_categories(self, obj):
+        return BudgetCategorySerializer(obj.categories.all(), many=True).data
+
+class BudgetCategorySerializer(serializers.ModelSerializer):
+    category = CategorySerializer(read_only=True)
+    category_id = serializers.PrimaryKeyRelatedField(
+        queryset=Category.objects.all(),
+        source='category',
+    )
+
+    class Meta:
+        model = BudgetCategory
+        fields = ('id', 'budget_id', 'category_id', 'category', 'allocated_amount')
+        read_only_fields = ('id', 'budget_id', 'category')

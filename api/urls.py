@@ -61,4 +61,8 @@ urlpatterns = [
     # ── Transfers ─────────────────────────────────────────────────────────────
     path('transfers/<int:pk>', views.TransferDetailView.as_view(),     name='transfers-detail'),
     path('transfers',          views.TransferListCreateView.as_view(), name='transfers-list'),
+
+    # ── Budgets ─────────────────────────────────────────────────────────────
+    path('budgets/<int:pk>', views.BudgetDetailView.as_view(),     name='budgets-detail'),
+    path('budgets',          views.BudgetListCreateView.as_view(), name='budgets-list'),
 ]

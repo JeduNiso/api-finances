@@ -281,3 +281,51 @@ class Transfer(models.Model):
 
     def __str__(self):
         return f"Transfer {self.amount} from {self.origin_account} to {self.destination_account}"
+
+class Budget(models.Model):
+    name = models.CharField(max_length=150)
+    total_amount = models.DecimalField(max_digits=15, decimal_places=2)
+    start_date = models.DateField()
+    end_date = models.DateField()
+    status = models.CharField(
+        max_length=20,
+        choices=[
+            ('active', 'Active'),
+            ('closed', 'Closed'),
+            ('draft', 'Draft'),
+        ],
+        default='active',
+    )
+    user = models.ForeignKey(User, null=True, blank=True, on_delete=models.CASCADE, related_name='budgets')
+    family = models.ForeignKey(Family, null=True, blank=True, on_delete=models.CASCADE, related_name='budgets')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'budgets'
+        constraints = [
+            models.CheckConstraint(
+                check=(
+                    models.Q(user__isnull=False) |
+                    models.Q(family__isnull=False)
+                ),
+                name='budgets_owner_check',
+            ),
+        ]
+
+    def __str__(self):
+        return self.name
+
+class BudgetCategory(models.Model):
+    budget = models.ForeignKey(Budget, on_delete=models.CASCADE, related_name='categories')
+    category = models.ForeignKey(Category, on_delete=models.CASCADE, related_name='budget_categories')
+    allocated_amount = models.DecimalField(max_digits=15, decimal_places=2)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'budget_categories'
+        unique_together = ('budget', 'category')
+
+    def __str__(self):
+        return f"{self.budget.name} - {self.category.name}"

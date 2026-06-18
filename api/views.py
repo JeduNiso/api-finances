@@ -15,13 +15,14 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from .models import (
     User, Family, FamilyMember, Bank, Account, UserAccount,
     Category, Spending, Expense, ExpenseLog, Debt, DebtPayment, Income, Transfer,
+    Budget, BudgetCategory,
 )
 from .serializers import (
     RegisterSerializer, UserSerializer, UserWriteSerializer,
     FamilySerializer, FamilyMemberSerializer, BankSerializer,
     AccountSerializer, CategorySerializer, SpendingSerializer,
     ExpenseSerializer, ExpenseLogSerializer, DebtSerializer, DebtPaymentSerializer,
-    IncomeSerializer, TransferSerializer,
+    IncomeSerializer, TransferSerializer, BudgetSerializer, BudgetCategorySerializer,
 )
 
 
@@ -1095,3 +1096,23 @@ class TransferDetailView(APIView):
             if spending_id:
                 Spending.objects.filter(pk=spending_id).delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+# ─── Budgets ─────────────────────────────────────────────────────────────────────────────
+
+
+class BudgetListCreateView(APIView):
+    def get(self, request):
+        family, member_ids = _family_context(request.user)
+        qs = (
+            Budget.objects.filter(Q(user__in=member_ids) | Q(family=family))
+            .select_related('user', 'family')
+            .order_by('-created_at')
+        )
+        return Response(BudgetSerializer(qs, many=True).data)
+
+    def post(self, request):
+        serializer = BudgetSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        serializer.save(user=request.user)
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+
