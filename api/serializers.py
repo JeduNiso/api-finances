@@ -239,11 +239,15 @@ class BudgetSerializer(serializers.ModelSerializer):
         queryset=Family.objects.all(),
         source='family',
     )
+    user_id = serializers.PrimaryKeyRelatedField(
+        queryset=User.objects.all(),
+        source='user',
+    )
     categories = serializers.SerializerMethodField()
 
     class Meta:
         model = Budget
-        fields = ('id', 'name', 'total_amount', 'family_id', 'categories', 'created_at')
+        fields = ('id', 'name', 'total_amount', 'start_date', 'family_id', 'user_id', 'end_date', 'status', 'categories', 'created_at')
         read_only_fields = ('id', 'categories', 'created_at')
 
     def get_categories(self, obj):
