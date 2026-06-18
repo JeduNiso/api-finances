@@ -1,6 +1,7 @@
 import calendar
 from datetime import timedelta
 from decimal import Decimal
+from urllib import request
 
 from django.contrib.auth import authenticate
 from django.db.models import F, Q, Sum
@@ -975,12 +976,12 @@ class TransferListCreateView(APIView):
         from django.db import connection
 
         # ── Manual validation (no ORM serializer) ─────────────────────────────
-        origin_id    = request.data.get('origin_account_id')
-        dest_id      = request.data.get('destination_account_id')
-        amount_raw   = request.data.get('amount')
-        dest_raw     = request.data.get('destination_amount')
+        origin_id      = request.data.get('origin_account_id')
+        dest_id        = request.data.get('destination_account_id')
+        amount_raw     = request.data.get('amount')
+        dest_raw       = request.data.get('destination_amount')
         transferred_at = request.data.get('transferred_at')
-        description  = request.data.get('description') or ''
+        description    = request.data.get('description') or ''
 
         if not all([origin_id, dest_id, amount_raw, transferred_at]):
             return Response(
@@ -1015,13 +1016,16 @@ class TransferListCreateView(APIView):
                                (amount, description, transferred_at,
                                 origin_account_id, destination_account_id,
                                 user_id, created_at)
-                           VALUES (%s, %s, %s, %s, %s, %s, NOW())
-                           RETURNING id, created_at""",
+                           VALUES (%s, %s, %s, %s, %s, %s, NOW())""",
                         [str(amount), description, transferred_at,
                          origin_account.pk, destination_account.pk, request.user.pk],
                     )
-                    row = cur.fetchone()
-                    transfer_id, created_at = row[0], row[1]
+                    transfer_id = cur.lastrowid  # ← reemplaza el RETURNING
+
+                # ── Fetch created_at por separado ───────────────────────────────
+                with connection.cursor() as cur:
+                    cur.execute("SELECT created_at FROM transfers WHERE id = %s", [transfer_id])
+                    created_at = cur.fetchone()[0]
 
                 # ── Create Spending in savepoint ────────────────────────────────
                 spending_id = None
@@ -1059,14 +1063,14 @@ class TransferListCreateView(APIView):
             return Response({'message': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
         return Response({
-            'id':                    transfer_id,
-            'amount':                str(amount),
-            'description':           description,
-            'transferred_at':        transferred_at,
-            'origin_account_id':     origin_account.pk,
+            'id':                     transfer_id,
+            'amount':                 str(amount),
+            'description':            description,
+            'transferred_at':         transferred_at,
+            'origin_account_id':      origin_account.pk,
             'destination_account_id': destination_account.pk,
-            'user_id':               request.user.pk,
-            'created_at':            str(created_at),
+            'user_id':                request.user.pk,
+            'created_at':             str(created_at),
         }, status=status.HTTP_201_CREATED)
 
 
