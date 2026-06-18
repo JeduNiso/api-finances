@@ -247,11 +247,9 @@ class BudgetSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Budget
-        fields = ('id', 'name', 'total_amount', 'start_date', 'family_id', 'user_id', 'end_date', 'status', 'categories', 'created_at')
-        read_only_fields = ('id', 'categories', 'created_at')
+        fields = ('id', 'name', 'total_amount', 'start_date', 'family_id', 'user_id', 'end_date', 'status', 'created_at')
+        read_only_fields = ('id', 'created_at')
 
-    def get_categories(self, obj):
-        return BudgetCategorySerializer(obj.categories.all(), many=True).data
 
 class BudgetCategorySerializer(serializers.ModelSerializer):
     category = CategorySerializer(read_only=True)
