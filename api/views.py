@@ -1111,6 +1111,7 @@ class BudgetListCreateView(APIView):
         return Response(BudgetSerializer(qs, many=True).data)
 
     def post(self, request):
+        print(f"Creating budget with data: {request.data}")
         serializer = BudgetSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         serializer.save(user=request.user)
