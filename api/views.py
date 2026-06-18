@@ -1116,3 +1116,27 @@ class BudgetListCreateView(APIView):
         serializer.save(user=request.user)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
+
+class BudgetDetailView(APIView):
+    def _get(self, request, pk):
+        family, member_ids = _family_context(request.user)
+        try:
+            return Budget.objects.filter(Q(user__in=member_ids) | Q(family=family)).get(pk=pk)
+        except Budget.DoesNotExist:
+            return None
+
+    def put(self, request, pk):
+        obj = self._get(request, pk)
+        if not obj:
+            return Response({'message': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
+        serializer = BudgetSerializer(obj, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data)
+
+    def delete(self, request, pk):
+        obj = self._get(request, pk)
+        if not obj:
+            return Response({'message': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
+        obj.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
